@@ -56,8 +56,11 @@
     }
     th:first-child { z-index: 3; background: #f0f0f0; }
 
-    td.hash { font-family: monospace; text-align: center; position: relative; }
-    td.hash .diff-btn { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); font-size: 0.68rem; color: #a00; white-space: nowrap; }
+    td.hash { font-family: monospace; padding: 3px 4px; }
+    td.hash .cell-inner { display: grid; grid-template-columns: auto 1fr 2.5em; align-items: baseline; gap: 4px; }
+    td.hash .hash-val { white-space: nowrap; }
+    td.hash .line-count { color: #888; font-size: 0.72rem; text-align: right; font-variant-numeric: tabular-nums; }
+    td.hash .diff-btn { font-size: 0.68rem; color: #a00; white-space: nowrap; text-align: right; }
     td.empty { background: #f8f8f8; }
 
     #wrap { overflow: auto; max-height: calc(100vh - var(--header-h) - 64px); }
@@ -84,7 +87,8 @@
         substr(f.rel_path, length('qgis_branches/') + length(f.branch) + 2) AS path,
         f.branch,
         f.id AS file_id,
-        q.digest
+        q.digest,
+        q.line_count
       FROM files f
       JOIN qgs q ON q.file_id = f.id
       WHERE f.branch IS NOT NULL
@@ -97,7 +101,7 @@
         const map = new Map();
         for (const row of rows) {
           if (!map.has(row.path)) map.set(row.path, {});
-          map.get(row.path)[row.branch] = { digest: row.digest, file_id: row.file_id };
+          map.get(row.path)[row.branch] = { digest: row.digest, file_id: row.file_id, line_count: row.line_count };
         }
 
         const paths = [...map.keys()].sort();
@@ -134,19 +138,34 @@
               td.className = 'hash';
               const changed = prevDigest !== null && entry.digest !== prevDigest;
 
+              const inner = document.createElement('div');
+              inner.className = 'cell-inner';
+
               const a = document.createElement('a');
               a.href = `qgs.html?id=${entry.file_id}`;
               a.textContent = entry.digest.slice(0, 4);
-              td.appendChild(a);
+              a.className = 'hash-val';
+              inner.appendChild(a);
 
+              if (entry.line_count != null) {
+                const lc = document.createElement('span');
+                lc.className = 'line-count';
+                lc.textContent = entry.line_count.toLocaleString();
+                inner.appendChild(lc);
+              }
+
+              const diffSlot = document.createElement('span');
+              diffSlot.className = 'diff-btn';
               if (changed) {
                 td.style.background = '#fdd';
                 const diff = document.createElement('a');
                 diff.href = `diff.html?a=${prevFileId}&b=${entry.file_id}`;
                 diff.textContent = 'diff';
-                diff.className = 'diff-btn';
-                td.appendChild(diff);
+                diffSlot.appendChild(diff);
               }
+              inner.appendChild(diffSlot);
+
+              td.appendChild(inner);
 
               prevDigest = entry.digest;
               prevFileId = entry.file_id;

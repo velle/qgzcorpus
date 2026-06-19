@@ -45,7 +45,8 @@ def create_schema(conn):
             raw_xml        TEXT NOT NULL,
             celmo_xml      TEXT,
             cleaned_xml    TEXT,
-            digest         TEXT
+            digest         TEXT,
+            line_count     INTEGER
         );
     ''')
 
@@ -80,11 +81,13 @@ def derive_xml_columns(raw_xml):
         tree = _celmo(tree)
         cleaned_xml = _to_c14n_pretty(tree)
         digest = hashlib.sha256(cleaned_xml.encode()).hexdigest()
+        line_count = cleaned_xml.count('\n') + 1
     except Exception:
         cleaned_xml = None
         digest = None
+        line_count = None
 
-    return celmo_xml, cleaned_xml, digest
+    return celmo_xml, cleaned_xml, digest, line_count
 
 
 def infer_branch(rel_path):
@@ -121,24 +124,24 @@ def process_file(conn, path):
 
     if ext == 'qgs':
         raw_xml = path.read_text(encoding='utf-8', errors='replace')
-        celmo_xml, cleaned_xml, digest = derive_xml_columns(raw_xml)
+        celmo_xml, cleaned_xml, digest, line_count = derive_xml_columns(raw_xml)
         conn.execute(
             '''INSERT INTO qgs
-               (file_id, inner_filename, raw_xml, celmo_xml, cleaned_xml, digest)
-               VALUES (?, NULL, ?, ?, ?, ?)''',
-            (file_id, raw_xml, celmo_xml, cleaned_xml, digest),
+               (file_id, inner_filename, raw_xml, celmo_xml, cleaned_xml, digest, line_count)
+               VALUES (?, NULL, ?, ?, ?, ?, ?)''',
+            (file_id, raw_xml, celmo_xml, cleaned_xml, digest, line_count),
         )
     elif ext == 'qgz':
         with zipfile.ZipFile(path) as zf:
             for name in zf.namelist():
                 if name.endswith('.qgs'):
                     raw_xml = zf.read(name).decode('utf-8', errors='replace')
-                    celmo_xml, cleaned_xml, digest = derive_xml_columns(raw_xml)
+                    celmo_xml, cleaned_xml, digest, line_count = derive_xml_columns(raw_xml)
                     conn.execute(
                         '''INSERT INTO qgs
-                           (file_id, inner_filename, raw_xml, celmo_xml, cleaned_xml, digest)
-                           VALUES (?, ?, ?, ?, ?, ?)''',
-                        (file_id, name, raw_xml, celmo_xml, cleaned_xml, digest),
+                           (file_id, inner_filename, raw_xml, celmo_xml, cleaned_xml, digest, line_count)
+                           VALUES (?, ?, ?, ?, ?, ?, ?)''',
+                        (file_id, name, raw_xml, celmo_xml, cleaned_xml, digest, line_count),
                     )
 
 
