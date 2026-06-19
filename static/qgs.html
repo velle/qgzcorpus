@@ -5,13 +5,31 @@
   <title>QGIS Corpus — File</title>
   <style>
     * { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; height: 100%; font-family: sans-serif; background: #f9f9f9; }
+    :root { --header-h: 34px; }
+    html, body { margin: 0; padding: 0; font-family: sans-serif; background: #f9f9f9; }
 
-    #top { padding: 12px 16px 8px; }
+    #site-header {
+      height: var(--header-h);
+      background: #1e1e2e;
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      border-bottom: 1px solid #0d0d1a;
+    }
+    #site-header a {
+      color: #999;
+      font-family: monospace;
+      font-size: 0.82rem;
+      text-decoration: none;
+      letter-spacing: 0.06em;
+    }
+    #site-header a:hover { color: #fff; }
+
+    #top { padding: 10px 16px 6px; }
     a { color: #555; font-size: 0.85rem; text-decoration: none; }
     a:hover { text-decoration: underline; }
-    h1 { font-size: 1.2rem; margin: 6px 0 4px; }
-    #meta { font-size: 0.85rem; color: #555; margin-bottom: 8px; }
+    h1 { font-size: 1.1rem; margin: 4px 0 3px; }
+    #meta { font-size: 0.82rem; color: #666; margin-bottom: 6px; }
     #meta span { margin-right: 16px; }
     #error { color: red; padding: 16px; }
 
@@ -33,7 +51,7 @@
       background: #f0f0f0;
       border-right: 1px solid #ddd;
       overflow-y: auto;
-      height: 80vh;
+      height: calc(100vh - var(--header-h) - 110px);
       padding: 4px 0;
     }
     #nav a {
@@ -50,10 +68,13 @@
     #nav a:hover { background: #ddd; }
     #nav a.active { background: #c8daf5; font-weight: bold; }
 
-    .editor-wrap { flex: 1; height: 80vh; }
+    .editor-wrap { flex: 1; height: calc(100vh - var(--header-h) - 110px); }
   </style>
 </head>
 <body>
+  <header id="site-header">
+    <a href="index.html">qgzcorpus</a>
+  </header>
   <div id="top">
     <a href="qgslist.html">← Back to list</a>
     <h1 id="title">Loading…</h1>

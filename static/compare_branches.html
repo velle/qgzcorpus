@@ -5,12 +5,29 @@
   <title>QGIS Corpus — Compare branches</title>
   <style>
     * { box-sizing: border-box; }
-    body { font-family: sans-serif; margin: 0; padding: 16px; background: #f9f9f9; }
-    a { color: #555; font-size: 0.85rem; text-decoration: none; }
-    a:hover { text-decoration: underline; }
-    h1 { font-size: 1.2rem; margin: 6px 0 12px; }
+    :root { --header-h: 34px; }
+    body { font-family: sans-serif; margin: 0; padding: 0; background: #f9f9f9; }
 
-    #loading { color: #888; }
+    #site-header {
+      height: var(--header-h);
+      background: #1e1e2e;
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      border-bottom: 1px solid #0d0d1a;
+    }
+    #site-header a {
+      color: #999;
+      font-family: monospace;
+      font-size: 0.82rem;
+      text-decoration: none;
+      letter-spacing: 0.06em;
+    }
+    #site-header a:hover { color: #fff; }
+
+    #content { padding: 12px 16px 0; }
+    h1 { font-size: 1.1rem; margin: 0 0 10px; color: #222; }
+    #loading { color: #888; font-size: 0.85rem; }
 
     table {
       border-collapse: collapse;
@@ -42,15 +59,18 @@
     td.hash { text-align: center; font-family: monospace; }
     td.empty { background: #f8f8f8; }
 
-
-    #wrap { overflow: auto; max-height: calc(100vh - 80px); }
+    #wrap { overflow: auto; max-height: calc(100vh - var(--header-h) - 64px); }
   </style>
 </head>
 <body>
-  <a href="index.html">← Back</a>
-  <h1>Compare branches</h1>
-  <p id="loading">Loading…</p>
-  <div id="wrap"></div>
+  <header id="site-header">
+    <a href="index.html">qgzcorpus</a>
+  </header>
+  <div id="content">
+    <h1>Compare branches</h1>
+    <p id="loading">Loading…</p>
+    <div id="wrap"></div>
+  </div>
 
   <script>
     const BRANCHES = [
@@ -73,7 +93,6 @@
     fetch(`/corpus.json?sql=${encodeURIComponent(sql)}&_shape=array&_size=max`)
       .then(r => r.json())
       .then(rows => {
-        // pivot: path → { branch → { digest, file_id } }
         const map = new Map();
         for (const row of rows) {
           if (!map.has(row.path)) map.set(row.path, {});
@@ -81,10 +100,8 @@
         }
 
         const paths = [...map.keys()].sort();
-
         const table = document.createElement('table');
 
-        // header
         const thead = table.createTHead();
         const hr = thead.insertRow();
         const th0 = document.createElement('th');
@@ -96,7 +113,6 @@
           hr.appendChild(th);
         }
 
-        // body
         const tbody = table.createTBody();
         for (const path of paths) {
           const byBranch = map.get(path);
@@ -115,13 +131,11 @@
             if (entry?.digest) {
               td.className = 'hash';
               const changed = prevDigest !== null && entry.digest !== prevDigest;
-
               const a = document.createElement('a');
               a.href = `qgs.html?id=${entry.file_id}`;
               a.textContent = entry.digest.slice(0, 4);
               if (changed) td.style.background = '#fdd';
               td.appendChild(a);
-
               prevDigest = entry.digest;
             } else {
               td.className = 'empty';

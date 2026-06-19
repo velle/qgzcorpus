@@ -7,8 +7,28 @@
   <script src="https://unpkg.com/tabulator-tables@6.2.1/dist/js/tabulator.min.js"></script>
   <style>
     * { box-sizing: border-box; }
-    body { font-family: sans-serif; margin: 0; padding: 16px; background: #f9f9f9; }
-    h1 { font-size: 1.2rem; margin: 0 0 12px; }
+    :root { --header-h: 34px; }
+    body { font-family: sans-serif; margin: 0; padding: 0; background: #f9f9f9; }
+
+    #site-header {
+      height: var(--header-h);
+      background: #1e1e2e;
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      border-bottom: 1px solid #0d0d1a;
+    }
+    #site-header a {
+      color: #999;
+      font-family: monospace;
+      font-size: 0.82rem;
+      text-decoration: none;
+      letter-spacing: 0.06em;
+    }
+    #site-header a:hover { color: #fff; }
+
+    #content { padding: 12px 16px; }
+    h1 { font-size: 1.1rem; margin: 0 0 10px; color: #222; }
     #table { background: white; }
     .tabulator-row { cursor: default !important; }
     .cell-wrap { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
@@ -25,8 +45,13 @@
   </style>
 </head>
 <body>
-  <h1>QGIS Corpus — QGS files</h1>
-  <div id="table"></div>
+  <header id="site-header">
+    <a href="index.html">qgzcorpus</a>
+  </header>
+  <div id="content">
+    <h1>QGS files</h1>
+    <div id="table"></div>
+  </div>
 
   <script>
     let table;
@@ -80,7 +105,7 @@
       ajaxParams: { _shape: 'array', _size: 'max' },
       ajaxResponse: (_url, _params, response) => response,
       layout: 'fitColumns',
-      height: '85vh',
+      height: 'calc(100vh - 34px - 52px)',
       placeholder: 'No files found',
       columns: [
         { title: '',         field: 'id',         width: 60, hozAlign: 'center', headerSort: false,
