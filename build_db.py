@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
 
 import hashlib
+import io
 import os
 import sqlite3
 import zipfile
 from pathlib import Path
 
+import lxml.etree as ET
+from qgztool.util import _celmo
+
 DB = Path(__file__).parent / 'corpus.db'
 ROOT = Path(__file__).parent / 'qgxfiles'
+
+# Attributes on <qgis> root that are metadata, not content
+CLEANED_REMOVE_ATTRS = {'version', 'savedDateTime', 'author', 'saveUserFull', 'saveUserEmail'}
 
 
 def sha256(path):
@@ -21,23 +28,63 @@ def sha256(path):
 def create_schema(conn):
     conn.executescript('''
         CREATE TABLE IF NOT EXISTS files (
-            id        INTEGER PRIMARY KEY,
-            rel_path  TEXT    NOT NULL UNIQUE,
-            branch    TEXT,
-            filename  TEXT    NOT NULL,
-            extension TEXT    NOT NULL,
+            id         INTEGER PRIMARY KEY,
+            rel_path   TEXT    NOT NULL UNIQUE,
+            branch     TEXT,
+            filename   TEXT    NOT NULL,
+            extension  TEXT    NOT NULL,
             size_bytes INTEGER,
-            mtime     REAL,
-            sha256    TEXT
+            mtime      REAL,
+            sha256     TEXT
         );
 
         CREATE TABLE IF NOT EXISTS qgs (
             id             INTEGER PRIMARY KEY,
             file_id        INTEGER NOT NULL REFERENCES files(id),
             inner_filename TEXT,
-            xml            TEXT    NOT NULL
+            raw_xml        TEXT NOT NULL,
+            celmo_xml      TEXT,
+            cleaned_xml    TEXT,
+            digest         TEXT
         );
     ''')
+
+
+def _parse_xml(xml_str):
+    parser = ET.XMLParser(remove_blank_text=True)
+    return ET.parse(io.StringIO(xml_str), parser)
+
+
+def _to_c14n_pretty(tree):
+    buf = io.BytesIO()
+    tree.write_c14n(buf)
+    c14n_bytes = buf.getvalue()
+    parser = ET.XMLParser(remove_blank_text=True)
+    root = ET.fromstring(c14n_bytes, parser)
+    return ET.tostring(root, pretty_print=True, encoding='unicode')
+
+
+def derive_xml_columns(raw_xml):
+    try:
+        tree = _parse_xml(raw_xml)
+        tree = _celmo(tree)
+        celmo_xml = _to_c14n_pretty(tree)
+    except Exception:
+        celmo_xml = None
+
+    try:
+        tree = _parse_xml(raw_xml)
+        root = tree.getroot()
+        for attr in CLEANED_REMOVE_ATTRS:
+            root.attrib.pop(attr, None)
+        tree = _celmo(tree)
+        cleaned_xml = _to_c14n_pretty(tree)
+        digest = hashlib.sha256(cleaned_xml.encode()).hexdigest()
+    except Exception:
+        cleaned_xml = None
+        digest = None
+
+    return celmo_xml, cleaned_xml, digest
 
 
 def infer_branch(rel_path):
@@ -73,19 +120,25 @@ def process_file(conn, path):
         ).fetchone()[0]
 
     if ext == 'qgs':
-        xml = path.read_text(encoding='utf-8', errors='replace')
+        raw_xml = path.read_text(encoding='utf-8', errors='replace')
+        celmo_xml, cleaned_xml, digest = derive_xml_columns(raw_xml)
         conn.execute(
-            'INSERT INTO qgs (file_id, inner_filename, xml) VALUES (?, NULL, ?)',
-            (file_id, xml),
+            '''INSERT INTO qgs
+               (file_id, inner_filename, raw_xml, celmo_xml, cleaned_xml, digest)
+               VALUES (?, NULL, ?, ?, ?, ?)''',
+            (file_id, raw_xml, celmo_xml, cleaned_xml, digest),
         )
     elif ext == 'qgz':
         with zipfile.ZipFile(path) as zf:
             for name in zf.namelist():
                 if name.endswith('.qgs'):
-                    xml = zf.read(name).decode('utf-8', errors='replace')
+                    raw_xml = zf.read(name).decode('utf-8', errors='replace')
+                    celmo_xml, cleaned_xml, digest = derive_xml_columns(raw_xml)
                     conn.execute(
-                        'INSERT INTO qgs (file_id, inner_filename, xml) VALUES (?, ?, ?)',
-                        (file_id, name, xml),
+                        '''INSERT INTO qgs
+                           (file_id, inner_filename, raw_xml, celmo_xml, cleaned_xml, digest)
+                           VALUES (?, ?, ?, ?, ?, ?)''',
+                        (file_id, name, raw_xml, celmo_xml, cleaned_xml, digest),
                     )
 
 

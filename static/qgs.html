@@ -218,7 +218,14 @@
           entry.appendChild(layout);
           container.appendChild(entry);
 
-          const xml = compressCdata(q.xml);
+          if (!q.cleaned_xml) {
+            const err = document.createElement('p');
+            err.style.color = 'red';
+            err.textContent = 'cleaned_xml could not be generated for this file.';
+            entry.appendChild(err);
+            continue;
+          }
+          const xml = compressCdata(q.cleaned_xml);
           const editor = monaco.editor.create(wrap, {
             value: xml,
             language: 'xml',
