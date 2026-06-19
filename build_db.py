@@ -152,8 +152,25 @@ def main():
         process_file(conn, path)
 
     conn.commit()
+
+    rows = conn.execute('SELECT DISTINCT digest FROM qgs WHERE digest IS NOT NULL').fetchall()
+    seen = {}
+    collisions = []
+    for (digest,) in rows:
+        prefix = digest[:4]
+        if prefix in seen and seen[prefix] != digest:
+            collisions.append((prefix, seen[prefix], digest))
+        else:
+            seen[prefix] = digest
+    if collisions:
+        print(f'\nWARNING: {len(collisions)} 4-char prefix collision(s) among distinct digests:')
+        for prefix, d1, d2 in collisions:
+            print(f'  {prefix}  {d1}  {d2}')
+    else:
+        print(f'OK: no 4-char prefix collisions among {len(rows)} distinct digests.')
+
     conn.close()
-    print(f'\nDone. {len(paths)} files indexed into {DB}')
+    print(f'Done. {len(paths)} files indexed into {DB}')
 
 
 if __name__ == '__main__':

@@ -118,7 +118,7 @@
 
               const a = document.createElement('a');
               a.href = `qgs.html?id=${entry.file_id}`;
-              a.textContent = entry.digest.slice(-4);
+              a.textContent = entry.digest.slice(0, 4);
               if (changed) td.style.background = '#fdd';
               td.appendChild(a);
 
