@@ -6,6 +6,7 @@
   <style>
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; height: 100%; font-family: sans-serif; background: #f9f9f9; }
+
     #top { padding: 12px 16px 8px; }
     a { color: #555; font-size: 0.85rem; text-decoration: none; }
     a:hover { text-decoration: underline; }
@@ -13,15 +14,43 @@
     #meta { font-size: 0.85rem; color: #555; margin-bottom: 8px; }
     #meta span { margin-right: 16px; }
     #error { color: red; padding: 16px; }
+
     .xml-entry { margin-bottom: 24px; }
-    .xml-entry h2 { font-size: 0.85rem; color: #555; margin: 0 0 4px 0; padding: 0 16px; }
-    .editor-toolbar { padding: 4px 16px; display: flex; gap: 8px; }
+    .xml-entry h2 { font-size: 0.85rem; color: #555; margin: 0 0 4px 0; }
+
+    .editor-toolbar { padding: 4px 0 4px 0; display: flex; gap: 8px; }
     .editor-toolbar button {
       font-size: 0.75rem; padding: 2px 8px; cursor: pointer;
       border: 1px solid #ccc; background: #f0f0f0; border-radius: 3px;
     }
     .editor-toolbar button:hover { background: #e0e0e0; }
-    .editor-wrap { width: 100%; height: 80vh; }
+
+    .editor-layout { display: flex; gap: 0; }
+
+    #nav {
+      width: 180px;
+      flex-shrink: 0;
+      background: #f0f0f0;
+      border-right: 1px solid #ddd;
+      overflow-y: auto;
+      height: 80vh;
+      padding: 4px 0;
+    }
+    #nav a {
+      display: block;
+      padding: 3px 10px;
+      font-size: 0.78rem;
+      color: #333;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    #nav a:hover { background: #ddd; }
+    #nav a.active { background: #c8daf5; font-weight: bold; }
+
+    .editor-wrap { flex: 1; height: 80vh; }
   </style>
 </head>
 <body>
@@ -37,7 +66,6 @@
   <script>
     require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min/vs' } });
 
-    // Build a char-offset → line-number map for an xml string
     function buildCharToLine(text) {
       const map = new Uint32Array(text.length + 1);
       let line = 0;
@@ -49,48 +77,38 @@
       return map;
     }
 
-    // Return Monaco folding ranges for all XML elements and CDATA blocks.
-    // Sets end = closing-tag line so the closing tag is hidden when folded.
     function xmlFoldingRanges(text) {
       const charToLine = buildCharToLine(text);
       const ranges = [];
-      const stack = []; // { tagName, startLine }
-
-      // Match opening tags, closing tags, self-closing tags, and CDATA
+      const stack = [];
       const re = /(<!\[CDATA\[)|(\]\]>)|<(\/?)([A-Za-z_][\w:.-]*)(?:[^>"']*|"[^"]*"|'[^']*')*(\/?)>/g;
       let cdataStart = -1;
       let match;
-
       while ((match = re.exec(text)) !== null) {
         if (match[1]) {
-          // <![CDATA[
           cdataStart = charToLine[match.index];
         } else if (match[2]) {
-          // ]]>
           const cdataEnd = charToLine[match.index];
-          if (cdataStart >= 0 && cdataEnd > cdataStart) {
+          if (cdataStart >= 0 && cdataEnd > cdataStart)
             ranges.push({ start: cdataStart + 1, end: cdataEnd + 1,
               kind: monaco.languages.FoldingRangeKind.Region });
-          }
           cdataStart = -1;
         } else if (cdataStart >= 0) {
-          // inside CDATA — skip tag-like content
+          // inside CDATA
         } else {
           const isClosing = match[3] === '/';
-          const isSelfClosing = match[5] === '/';
+          const isSelfClosing = !isClosing && match[0].endsWith('/>');
           const tagName = match[4];
           const line = charToLine[match.index];
-
           if (!isClosing && !isSelfClosing) {
             stack.push({ tagName, startLine: line });
           } else if (isClosing) {
             for (let i = stack.length - 1; i >= 0; i--) {
               if (stack[i].tagName === tagName) {
                 const startLine = stack[i].startLine;
-                if (line > startLine) {
+                if (line > startLine)
                   ranges.push({ start: startLine + 1, end: line + 1,
                     kind: monaco.languages.FoldingRangeKind.Region });
-                }
                 stack.splice(i, 1);
                 break;
               }
@@ -99,6 +117,31 @@
         }
       }
       return ranges;
+    }
+
+    // Return direct children of the root element with their line numbers
+    function getRootChildren(text) {
+      const charToLine = buildCharToLine(text);
+      const children = [];
+      let depth = 0;
+      const re = /(<!\[CDATA\[[\s\S]*?\]\]>)|<(\/?)([A-Za-z_][\w:.-]*)(?:[^>"']*|"[^"]*"|'[^']*')*(\/?)>/g;
+      let match;
+      while ((match = re.exec(text)) !== null) {
+        if (match[1]) continue; // skip CDATA
+        const isClosing = match[2] === '/';
+        const isSelfClosing = !isClosing && match[0].endsWith('/>');
+        const tagName = match[3];
+        const line = charToLine[match.index];
+        if (!isClosing) {
+          depth++;
+          if (depth === 2)
+            children.push({ tagName, line });
+          if (isSelfClosing) depth--;
+        } else {
+          depth--;
+        }
+      }
+      return children;
     }
 
     function compressCdata(xml) {
@@ -160,10 +203,19 @@
           const toolbar = document.createElement('div');
           toolbar.className = 'editor-toolbar';
 
+          const layout = document.createElement('div');
+          layout.className = 'editor-layout';
+
+          const nav = document.createElement('div');
+          nav.id = 'nav';
+
           const wrap = document.createElement('div');
           wrap.className = 'editor-wrap';
+
+          layout.appendChild(nav);
+          layout.appendChild(wrap);
           entry.appendChild(toolbar);
-          entry.appendChild(wrap);
+          entry.appendChild(layout);
           container.appendChild(entry);
 
           const xml = compressCdata(q.xml);
@@ -177,6 +229,47 @@
             scrollBeyondLastLine: false,
             stickyScroll: { enabled: true },
           });
+
+          // Build nav links from root children
+          const rootChildren = getRootChildren(xml);
+          const navLinks = [];
+          for (const child of rootChildren) {
+            const a = document.createElement('a');
+            a.textContent = `<${child.tagName}>`;
+            a.title = `Line ${child.line + 1}`;
+            a.addEventListener('click', () => {
+              editor.revealLineInCenter(child.line + 1);
+              editor.setPosition({ lineNumber: child.line + 1, column: 1 });
+              editor.focus();
+              navLinks.forEach(l => l.classList.remove('active'));
+              a.classList.add('active');
+            });
+            navLinks.push(a);
+            nav.appendChild(a);
+          }
+
+          // Highlight active nav item on scroll
+          editor.onDidScrollChange(() => {
+            const visibleLine = editor.getVisibleRanges()[0]?.startLineNumber ?? 1;
+            let active = null;
+            for (const child of rootChildren) {
+              if (child.line + 1 <= visibleLine) active = child;
+              else break;
+            }
+            navLinks.forEach((l, i) => {
+              l.classList.toggle('active', rootChildren[i] === active);
+            });
+          });
+
+          const toggleBtn = document.createElement('button');
+          toggleBtn.textContent = 'Nav ▾';
+          toggleBtn.addEventListener('click', () => {
+            const hidden = nav.style.display === 'none';
+            nav.style.display = hidden ? '' : 'none';
+            toggleBtn.textContent = hidden ? 'Nav ▾' : 'Nav ▸';
+            editor.layout();
+          });
+          toolbar.appendChild(toggleBtn);
 
           [['Collapse all', () => editor.getAction('editor.foldAll').run()],
            ['Expand all',   () => editor.getAction('editor.unfoldAll').run()]
