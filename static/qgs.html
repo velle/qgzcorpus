@@ -5,35 +5,32 @@
   <title>QGIS Corpus — File</title>
   <style>
     * { box-sizing: border-box; }
-    body { font-family: sans-serif; margin: 0; padding: 16px; background: #f9f9f9; }
+    html, body { margin: 0; padding: 0; height: 100%; font-family: sans-serif; background: #f9f9f9; }
+    #top { padding: 12px 16px 8px; }
     a { color: #555; font-size: 0.85rem; text-decoration: none; }
     a:hover { text-decoration: underline; }
-    h1 { font-size: 1.2rem; margin: 8px 0 4px; }
-    #meta { font-size: 0.85rem; color: #555; margin-bottom: 16px; }
+    h1 { font-size: 1.2rem; margin: 6px 0 4px; }
+    #meta { font-size: 0.85rem; color: #555; margin-bottom: 8px; }
     #meta span { margin-right: 16px; }
-    .xml-entry { margin-bottom: 16px; }
-    .xml-entry h2 { font-size: 0.9rem; margin: 0 0 4px; color: #333; }
-    pre {
-      background: #f4f4f4;
-      border: 1px solid #ddd;
-      padding: 10px;
-      overflow: auto;
-      max-height: 80vh;
-      font-size: 0.75rem;
-      margin: 0;
-      white-space: pre;
-    }
-    #error { color: red; }
+    #error { color: red; padding: 16px; }
+    .xml-entry { margin-bottom: 24px; }
+    .xml-entry h2 { font-size: 0.85rem; color: #555; margin: 0 0 4px 0; padding: 0 16px; }
+    .editor-wrap { width: 100%; height: 80vh; }
   </style>
 </head>
 <body>
-  <a href="qgslist.html">← Back to list</a>
-  <h1 id="title">Loading…</h1>
-  <div id="meta"></div>
+  <div id="top">
+    <a href="qgslist.html">← Back to list</a>
+    <h1 id="title">Loading…</h1>
+    <div id="meta"></div>
+  </div>
   <div id="entries"></div>
   <div id="error"></div>
 
+  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min/vs/loader.js"></script>
   <script>
+    require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min/vs' } });
+
     const params = new URLSearchParams(location.search);
     const id = params.get('id');
 
@@ -43,6 +40,7 @@
       Promise.all([
         fetch(`/corpus/files.json?_shape=array&id=${id}`).then(r => r.json()),
         fetch(`/corpus/qgs.json?_shape=array&file_id=${id}&_size=max`).then(r => r.json()),
+        new Promise(resolve => require(['vs/editor/editor.main'], resolve)),
       ]).then(([files, qgsRows]) => {
         if (!files.length) {
           document.getElementById('error').textContent = `No file found with id=${id}.`;
@@ -63,18 +61,32 @@
           container.textContent = 'No QGS data found.';
           return;
         }
+
         for (const q of qgsRows) {
-          const div = document.createElement('div');
-          div.className = 'xml-entry';
+          const entry = document.createElement('div');
+          entry.className = 'xml-entry';
+
           if (q.inner_filename) {
             const h2 = document.createElement('h2');
             h2.textContent = q.inner_filename;
-            div.appendChild(h2);
+            entry.appendChild(h2);
           }
-          const pre = document.createElement('pre');
-          pre.textContent = q.xml;
-          div.appendChild(pre);
-          container.appendChild(div);
+
+          const wrap = document.createElement('div');
+          wrap.className = 'editor-wrap';
+          entry.appendChild(wrap);
+          container.appendChild(entry);
+
+          monaco.editor.create(wrap, {
+            value: q.xml,
+            language: 'xml',
+            readOnly: true,
+            theme: 'vs',
+            minimap: { enabled: true },
+            wordWrap: 'off',
+            scrollBeyondLastLine: false,
+            stickyScroll: { enabled: true },
+          });
         }
       });
     }
