@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>QGIS Corpus — XPath queries</title>
+  <style>
+    * { box-sizing: border-box; }
+    :root { --header-h: 34px; }
+    body { font-family: sans-serif; margin: 0; padding: 0; background: #f9f9f9; }
+
+    #site-header {
+      height: var(--header-h);
+      background: #1e1e2e;
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      border-bottom: 1px solid #0d0d1a;
+    }
+    #site-header a {
+      color: #999;
+      font-family: monospace;
+      font-size: 0.82rem;
+      text-decoration: none;
+      letter-spacing: 0.06em;
+    }
+    #site-header a:hover { color: #fff; }
+
+    #layout { display: flex; height: calc(100vh - var(--header-h)); }
+
+    /* Left panel — query list */
+    #sidebar {
+      width: 280px;
+      flex-shrink: 0;
+      border-right: 1px solid #ccc;
+      background: #fafafa;
+      display: flex;
+      flex-direction: column;
+    }
+    #sidebar h2 { font-size: 0.85rem; margin: 0; padding: 10px 12px; border-bottom: 1px solid #ddd; color: #333; }
+    #query-list { flex: 1; overflow-y: auto; }
+    .query-item {
+      padding: 8px 12px;
+      border-bottom: 1px solid #eee;
+      cursor: pointer;
+      font-size: 0.82rem;
+    }
+    .query-item:hover { background: #eef2ff; }
+    .query-item.active { background: #dce8ff; font-weight: 600; }
+    .query-item .expr { font-family: monospace; color: #222; }
+    .query-item .meta { color: #888; font-size: 0.75rem; margin-top: 2px; }
+
+    /* Right panel — results */
+    #main { flex: 1; overflow-y: auto; padding: 16px 20px; }
+    #main h2 { font-size: 1rem; margin: 0 0 12px; }
+
+    .stats { display: flex; gap: 24px; margin-bottom: 16px; font-size: 0.85rem; }
+    .stat { }
+    .stat .val { font-size: 1.3rem; font-weight: 700; color: #1a3a6b; }
+    .stat .lbl { color: #888; font-size: 0.75rem; }
+
+    .section-title { font-size: 0.8rem; font-weight: 600; color: #555; text-transform: uppercase;
+                     letter-spacing: 0.05em; margin: 16px 0 6px; }
+
+    table { border-collapse: collapse; font-size: 0.8rem; width: 100%; margin-bottom: 16px; }
+    th, td { border: 1px solid #ccc; padding: 4px 10px; text-align: left; }
+    th { background: #f0f0f0; }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    td.mono { font-family: monospace; }
+
+    .result-group { margin-bottom: 12px; }
+    .result-group summary {
+      cursor: pointer; font-family: monospace; font-size: 0.82rem;
+      padding: 4px 8px; background: #f0f0f0; border: 1px solid #ccc;
+      user-select: none;
+    }
+    .result-group summary:hover { background: #e4e8ff; }
+    .result-group .xml-snippet {
+      font-family: monospace; font-size: 0.75rem; background: #1e1e2e; color: #d4d4d4;
+      padding: 8px 12px; overflow-x: auto; white-space: pre; border: 1px solid #333;
+      border-top: none; max-height: 300px; overflow-y: auto;
+    }
+
+    #empty { color: #888; font-size: 0.9rem; padding: 32px 0; }
+  </style>
+</head>
+<body>
+  <header id="site-header">
+    <a href="index.html">qgzcorpus</a>
+  </header>
+  <div id="layout">
+    <div id="sidebar">
+      <h2>Stored queries</h2>
+      <div id="query-list"><p style="padding:12px;color:#aaa;font-size:0.8rem;">Loading…</p></div>
+    </div>
+    <div id="main">
+      <p id="empty">Select a query on the left, or run one from the terminal:<br><br>
+        <code>python query.py run "//fieldConfiguration"</code>
+      </p>
+    </div>
+  </div>
+
+  <script>
+    let activeId = null;
+
+    function escapeHtml(s) {
+      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    function loadQueryList() {
+      fetch('/corpus/xpath_queries.json?_shape=array&_size=max&_sort_desc=id')
+        .then(r => r.json())
+        .then(queries => {
+          const list = document.getElementById('query-list');
+          if (!queries.length) {
+            list.innerHTML = '<p style="padding:12px;color:#aaa;font-size:0.8rem;">No queries yet.</p>';
+            return;
+          }
+          list.innerHTML = '';
+          for (const q of queries) {
+            const div = document.createElement('div');
+            div.className = 'query-item' + (q.id === activeId ? ' active' : '');
+            div.dataset.id = q.id;
+            div.innerHTML = `<div class="expr">${escapeHtml(q.expression)}</div>
+              <div class="meta">${q.file_count ?? 0} files · ${q.match_count ?? 0} matches</div>`;
+            div.addEventListener('click', () => showQuery(q.id));
+            list.appendChild(div);
+          }
+        });
+    }
+
+    function showQuery(queryId) {
+      activeId = queryId;
+      document.querySelectorAll('.query-item').forEach(el => {
+        el.classList.toggle('active', parseInt(el.dataset.id) === queryId);
+      });
+
+      const main = document.getElementById('main');
+      main.innerHTML = '<p style="color:#aaa">Loading…</p>';
+
+      const noMatchSql = `
+        SELECT f.branch, f.filename, f.id AS file_id
+        FROM qgs q
+        JOIN files f ON f.id = q.file_id
+        WHERE q.cleaned_xml IS NOT NULL
+        AND q.file_id NOT IN (
+            SELECT DISTINCT file_id FROM xpath_results WHERE query_id = ${queryId}
+        )
+        ORDER BY f.branch, f.filename
+      `;
+
+      Promise.all([
+        fetch(`/corpus/xpath_queries.json?_shape=array&id=${queryId}`).then(r => r.json()),
+        fetch(`/corpus.json?sql=${encodeURIComponent(`
+          SELECT r.id, r.branch, r.struct_path, r.lxml_path, r.xml,
+                 f.filename, f.id AS file_id
+          FROM xpath_results r
+          JOIN files f ON f.id = r.file_id
+          WHERE r.query_id = ${queryId}
+          ORDER BY r.branch, f.filename, r.struct_path
+        `)}&_shape=array&_size=max`).then(r => r.json()),
+        fetch(`/corpus.json?sql=${encodeURIComponent(noMatchSql)}&_shape=array&_size=max`).then(r => r.json()),
+      ]).then(([queries, results, noMatch]) => {
+        const q = queries[0];
+        if (!q) { main.innerHTML = '<p>Query not found.</p>'; return; }
+
+        main.innerHTML = '';
+        document.getElementById('empty')?.remove();
+
+        const h2 = document.createElement('h2');
+        h2.innerHTML = `<code>${escapeHtml(q.expression)}</code>`;
+        main.appendChild(h2);
+
+        // Stats
+        const stats = document.createElement('div');
+        stats.className = 'stats';
+        stats.innerHTML = `
+          <div class="stat"><div class="val">${q.file_count ?? 0}</div><div class="lbl">files matched</div></div>
+          <div class="stat"><div class="val">${q.match_count ?? 0}</div><div class="lbl">total matches</div></div>
+          <div class="stat"><div class="val">${noMatch.length}</div><div class="lbl">files without match</div></div>
+        `;
+        main.appendChild(stats);
+
+        // Structural paths summary
+        const pathCounts = {};
+        for (const r of results) {
+          const p = r.struct_path ?? '(non-element)';
+          pathCounts[p] = (pathCounts[p] ?? 0) + 1;
+        }
+        const pathEntries = Object.entries(pathCounts).sort((a, b) => b[1] - a[1]);
+
+        const t1 = document.createElement('div');
+        t1.className = 'section-title';
+        t1.textContent = 'Structural paths';
+        main.appendChild(t1);
+
+        const pathTable = document.createElement('table');
+        pathTable.innerHTML = '<tr><th>Path</th><th>Count</th></tr>';
+        for (const [path, count] of pathEntries) {
+          const tr = pathTable.insertRow();
+          tr.insertCell().innerHTML = `<span class="mono">${escapeHtml(path)}</span>`;
+          const td = tr.insertCell();
+          td.className = 'num';
+          td.textContent = count;
+        }
+        main.appendChild(pathTable);
+
+        // Per-branch summary
+        const branchCounts = {};
+        for (const r of results) {
+          branchCounts[r.branch] = (branchCounts[r.branch] ?? 0) + 1;
+        }
+        const branchEntries = Object.entries(branchCounts).sort((a, b) => a[0].localeCompare(b[0]));
+
+        const t2 = document.createElement('div');
+        t2.className = 'section-title';
+        t2.textContent = 'Per branch';
+        main.appendChild(t2);
+
+        const branchTable = document.createElement('table');
+        branchTable.innerHTML = '<tr><th>Branch</th><th>Matches</th></tr>';
+        for (const [branch, count] of branchEntries) {
+          const tr = branchTable.insertRow();
+          tr.insertCell().textContent = branch;
+          const td = tr.insertCell();
+          td.className = 'num';
+          td.textContent = count;
+        }
+        main.appendChild(branchTable);
+
+        // Results grouped by struct_path
+        const t3 = document.createElement('div');
+        t3.className = 'section-title';
+        t3.textContent = 'Matches';
+        main.appendChild(t3);
+
+        const byPath = {};
+        for (const r of results) {
+          const key = r.struct_path ?? '(non-element)';
+          (byPath[key] = byPath[key] ?? []).push(r);
+        }
+
+        for (const [path, rows] of Object.entries(byPath)) {
+          const details = document.createElement('details');
+          details.className = 'result-group';
+          const summary = document.createElement('summary');
+          summary.textContent = `${path}  (${rows.length})`;
+          details.appendChild(summary);
+
+          for (const r of rows) {
+            const header = document.createElement('div');
+            header.style.cssText = 'font-size:0.75rem;color:#888;padding:3px 8px;background:#f8f8f8;border:1px solid #ccc;border-top:none;';
+            header.innerHTML = `<a href="qgs.html?id=${r.file_id}" style="color:#2c5282">${escapeHtml(r.filename)}</a>` +
+              ` · ${escapeHtml(r.branch ?? '')}` +
+              (r.lxml_path ? ` · <span style="font-family:monospace">${escapeHtml(r.lxml_path)}</span>` : '');
+            details.appendChild(header);
+
+            if (r.xml) {
+              const pre = document.createElement('div');
+              pre.className = 'xml-snippet';
+              pre.textContent = r.xml.length > 3000 ? r.xml.slice(0, 3000) + '\n…' : r.xml;
+              details.appendChild(pre);
+            }
+          }
+
+          main.appendChild(details);
+        }
+
+        // Files without matches
+        if (noMatch.length) {
+          const t4 = document.createElement('div');
+          t4.className = 'section-title';
+          t4.textContent = `Files without matches (${noMatch.length})`;
+          main.appendChild(t4);
+
+          // Group by branch
+          const byBranch = {};
+          for (const r of noMatch) {
+            (byBranch[r.branch] = byBranch[r.branch] ?? []).push(r);
+          }
+
+          for (const [branch, rows] of Object.entries(byBranch).sort()) {
+            const details = document.createElement('details');
+            details.className = 'result-group';
+            const summary = document.createElement('summary');
+            summary.textContent = `${branch}  (${rows.length})`;
+            details.appendChild(summary);
+
+            const list = document.createElement('div');
+            list.style.cssText = 'padding:4px 8px;background:#f8f8f8;border:1px solid #ccc;border-top:none;font-size:0.78rem;';
+            for (const r of rows) {
+              const line = document.createElement('div');
+              line.style.padding = '2px 0';
+              line.innerHTML = `<a href="qgs.html?id=${r.file_id}" style="color:#2c5282">${escapeHtml(r.filename)}</a>`;
+              list.appendChild(line);
+            }
+            details.appendChild(list);
+            main.appendChild(details);
+          }
+        }
+      });
+    }
+
+    loadQueryList();
+    // Reload list every 10s so new queries appear without refresh
+    setInterval(loadQueryList, 10000);
+  </script>
+</body>
+</html>
