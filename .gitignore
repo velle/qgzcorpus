@@ -1,0 +1,4 @@
+corpus.db
+qgxfiles/
+__pycache__/
+*.pyc
