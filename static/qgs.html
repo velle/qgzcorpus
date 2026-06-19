@@ -15,6 +15,12 @@
     #error { color: red; padding: 16px; }
     .xml-entry { margin-bottom: 24px; }
     .xml-entry h2 { font-size: 0.85rem; color: #555; margin: 0 0 4px 0; padding: 0 16px; }
+    .editor-toolbar { padding: 4px 16px; display: flex; gap: 8px; }
+    .editor-toolbar button {
+      font-size: 0.75rem; padding: 2px 8px; cursor: pointer;
+      border: 1px solid #ccc; background: #f0f0f0; border-radius: 3px;
+    }
+    .editor-toolbar button:hover { background: #e0e0e0; }
     .editor-wrap { width: 100%; height: 80vh; }
   </style>
 </head>
@@ -62,6 +68,15 @@
           return;
         }
 
+        function compressCdata(xml) {
+          return xml.replace(/<!\[CDATA\[([\s\S]*?)]]>/g, (_match, content) => {
+            const trimmed = content.trim();
+            if (!trimmed.includes('\n')) return `<![CDATA[${trimmed}]]>`;
+            const preview = trimmed.split('\n')[0].trim().slice(0, 80);
+            return `<![CDATA[${preview}…]]>`;
+          });
+        }
+
         for (const q of qgsRows) {
           const entry = document.createElement('div');
           entry.className = 'xml-entry';
@@ -72,13 +87,17 @@
             entry.appendChild(h2);
           }
 
+          const toolbar = document.createElement('div');
+          toolbar.className = 'editor-toolbar';
+
           const wrap = document.createElement('div');
           wrap.className = 'editor-wrap';
+          entry.appendChild(toolbar);
           entry.appendChild(wrap);
           container.appendChild(entry);
 
-          monaco.editor.create(wrap, {
-            value: q.xml,
+          const editor = monaco.editor.create(wrap, {
+            value: compressCdata(q.xml),
             language: 'xml',
             readOnly: true,
             theme: 'vs',
@@ -86,6 +105,15 @@
             wordWrap: 'off',
             scrollBeyondLastLine: false,
             stickyScroll: { enabled: true },
+          });
+
+          [['Collapse all', () => editor.getAction('editor.foldAll').run()],
+           ['Expand all',   () => editor.getAction('editor.unfoldAll').run()]
+          ].forEach(([label, fn]) => {
+            const btn = document.createElement('button');
+            btn.textContent = label;
+            btn.addEventListener('click', fn);
+            toolbar.appendChild(btn);
           });
         }
       });
