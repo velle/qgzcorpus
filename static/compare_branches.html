@@ -41,8 +41,7 @@
 
     td.hash { text-align: center; font-family: monospace; }
     td.empty { background: #f8f8f8; }
-    td.match { background: #e6f4ea; }
-    td.mismatch { background: #fdecea; }
+
 
     #wrap { overflow: auto; max-height: calc(100vh - 80px); }
   </style>
@@ -101,24 +100,29 @@
         const tbody = table.createTBody();
         for (const path of paths) {
           const byBranch = map.get(path);
-          const digests = BRANCHES.map(b => byBranch[b]?.digest).filter(Boolean);
-          const allSame = digests.length > 0 && digests.every(d => d === digests[0]);
-
           const tr = tbody.insertRow();
 
           const td0 = tr.insertCell();
           td0.textContent = path;
           td0.title = path;
 
+          let prevDigest = null;
+
           for (const b of BRANCHES) {
             const td = tr.insertCell();
             const entry = byBranch[b];
+
             if (entry?.digest) {
-              td.className = 'hash ' + (allSame ? 'match' : 'mismatch');
+              td.className = 'hash';
+              const changed = prevDigest !== null && entry.digest !== prevDigest;
+
               const a = document.createElement('a');
               a.href = `qgs.html?id=${entry.file_id}`;
               a.textContent = entry.digest.slice(-4);
+              if (changed) td.style.background = '#fdd';
               td.appendChild(a);
+
+              prevDigest = entry.digest;
             } else {
               td.className = 'empty';
             }
