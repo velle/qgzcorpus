@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "*.qgs": "xml"
+    },
+    "xml.validation.enabled": false
+}
