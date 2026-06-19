@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>QGIS Corpus — Compare branches</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: sans-serif; margin: 0; padding: 16px; background: #f9f9f9; }
+    a { color: #555; font-size: 0.85rem; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    h1 { font-size: 1.2rem; margin: 6px 0 12px; }
+
+    #loading { color: #888; }
+
+    table {
+      border-collapse: collapse;
+      font-size: 0.78rem;
+      width: 100%;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 3px 8px;
+      white-space: nowrap;
+    }
+    th {
+      background: #f0f0f0;
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+    td:first-child, th:first-child {
+      position: sticky;
+      left: 0;
+      background: #fafafa;
+      z-index: 1;
+      max-width: 400px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    th:first-child { z-index: 3; background: #f0f0f0; }
+
+    td.hash { text-align: center; font-family: monospace; }
+    td.empty { background: #f8f8f8; }
+    td.match { background: #e6f4ea; }
+    td.mismatch { background: #fdecea; }
+
+    #wrap { overflow: auto; max-height: calc(100vh - 80px); }
+  </style>
+</head>
+<body>
+  <a href="index.html">← Back</a>
+  <h1>Compare branches</h1>
+  <p id="loading">Loading…</p>
+  <div id="wrap"></div>
+
+  <script>
+    const BRANCHES = [
+      'release-3_0', 'release-3_4', 'release-3_10', 'release-3_16',
+      'release-3_22', 'release-3_28', 'release-3_34', 'master',
+    ];
+
+    const sql = `
+      SELECT
+        substr(f.rel_path, length('qgis_branches/') + length(f.branch) + 2) AS path,
+        f.branch,
+        f.id AS file_id,
+        q.digest
+      FROM files f
+      JOIN qgs q ON q.file_id = f.id
+      WHERE f.branch IS NOT NULL
+      ORDER BY path, f.branch
+    `;
+
+    fetch(`/corpus.json?sql=${encodeURIComponent(sql)}&_shape=array&_size=max`)
+      .then(r => r.json())
+      .then(rows => {
+        // pivot: path → { branch → { digest, file_id } }
+        const map = new Map();
+        for (const row of rows) {
+          if (!map.has(row.path)) map.set(row.path, {});
+          map.get(row.path)[row.branch] = { digest: row.digest, file_id: row.file_id };
+        }
+
+        const paths = [...map.keys()].sort();
+
+        const table = document.createElement('table');
+
+        // header
+        const thead = table.createTHead();
+        const hr = thead.insertRow();
+        const th0 = document.createElement('th');
+        th0.textContent = 'File';
+        hr.appendChild(th0);
+        for (const b of BRANCHES) {
+          const th = document.createElement('th');
+          th.textContent = b;
+          hr.appendChild(th);
+        }
+
+        // body
+        const tbody = table.createTBody();
+        for (const path of paths) {
+          const byBranch = map.get(path);
+          const digests = BRANCHES.map(b => byBranch[b]?.digest).filter(Boolean);
+          const allSame = digests.length > 0 && digests.every(d => d === digests[0]);
+
+          const tr = tbody.insertRow();
+
+          const td0 = tr.insertCell();
+          td0.textContent = path;
+          td0.title = path;
+
+          for (const b of BRANCHES) {
+            const td = tr.insertCell();
+            const entry = byBranch[b];
+            if (entry?.digest) {
+              td.className = 'hash ' + (allSame ? 'match' : 'mismatch');
+              const a = document.createElement('a');
+              a.href = `qgs.html?id=${entry.file_id}`;
+              a.textContent = entry.digest.slice(-4);
+              td.appendChild(a);
+            } else {
+              td.className = 'empty';
+            }
+          }
+        }
+
+        document.getElementById('loading').remove();
+        document.getElementById('wrap').appendChild(table);
+      });
+  </script>
+</body>
+</html>
