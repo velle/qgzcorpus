@@ -37,6 +37,79 @@
   <script>
     require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min/vs' } });
 
+    // Build a char-offset → line-number map for an xml string
+    function buildCharToLine(text) {
+      const map = new Uint32Array(text.length + 1);
+      let line = 0;
+      for (let i = 0; i < text.length; i++) {
+        map[i] = line;
+        if (text[i] === '\n') line++;
+      }
+      map[text.length] = line;
+      return map;
+    }
+
+    // Return Monaco folding ranges for all XML elements and CDATA blocks.
+    // Sets end = closing-tag line so the closing tag is hidden when folded.
+    function xmlFoldingRanges(text) {
+      const charToLine = buildCharToLine(text);
+      const ranges = [];
+      const stack = []; // { tagName, startLine }
+
+      // Match opening tags, closing tags, self-closing tags, and CDATA
+      const re = /(<!\[CDATA\[)|(\]\]>)|<(\/?)([A-Za-z_][\w:.-]*)(?:[^>"']*|"[^"]*"|'[^']*')*(\/?)>/g;
+      let cdataStart = -1;
+      let match;
+
+      while ((match = re.exec(text)) !== null) {
+        if (match[1]) {
+          // <![CDATA[
+          cdataStart = charToLine[match.index];
+        } else if (match[2]) {
+          // ]]>
+          const cdataEnd = charToLine[match.index];
+          if (cdataStart >= 0 && cdataEnd > cdataStart) {
+            ranges.push({ start: cdataStart + 1, end: cdataEnd + 1,
+              kind: monaco.languages.FoldingRangeKind.Region });
+          }
+          cdataStart = -1;
+        } else if (cdataStart >= 0) {
+          // inside CDATA — skip tag-like content
+        } else {
+          const isClosing = match[3] === '/';
+          const isSelfClosing = match[5] === '/';
+          const tagName = match[4];
+          const line = charToLine[match.index];
+
+          if (!isClosing && !isSelfClosing) {
+            stack.push({ tagName, startLine: line });
+          } else if (isClosing) {
+            for (let i = stack.length - 1; i >= 0; i--) {
+              if (stack[i].tagName === tagName) {
+                const startLine = stack[i].startLine;
+                if (line > startLine) {
+                  ranges.push({ start: startLine + 1, end: line + 1,
+                    kind: monaco.languages.FoldingRangeKind.Region });
+                }
+                stack.splice(i, 1);
+                break;
+              }
+            }
+          }
+        }
+      }
+      return ranges;
+    }
+
+    function compressCdata(xml) {
+      return xml.replace(/<!\[CDATA\[([\s\S]*?)]]>/g, (_match, content) => {
+        const trimmed = content.trim();
+        if (!trimmed.includes('\n')) return `<![CDATA[${trimmed}]]>`;
+        const preview = trimmed.split('\n')[0].trim().slice(0, 80);
+        return `<![CDATA[${preview}…]]>`;
+      });
+    }
+
     const params = new URLSearchParams(location.search);
     const id = params.get('id');
 
@@ -53,6 +126,12 @@
           return;
         }
 
+        monaco.languages.registerFoldingRangeProvider('xml', {
+          provideFoldingRanges(model) {
+            return xmlFoldingRanges(model.getValue());
+          }
+        });
+
         const file = files[0];
         document.title = `QGIS Corpus — ${file.filename}`;
         document.getElementById('title').textContent = file.filename;
@@ -66,15 +145,6 @@
         if (!qgsRows.length) {
           container.textContent = 'No QGS data found.';
           return;
-        }
-
-        function compressCdata(xml) {
-          return xml.replace(/<!\[CDATA\[([\s\S]*?)]]>/g, (_match, content) => {
-            const trimmed = content.trim();
-            if (!trimmed.includes('\n')) return `<![CDATA[${trimmed}]]>`;
-            const preview = trimmed.split('\n')[0].trim().slice(0, 80);
-            return `<![CDATA[${preview}…]]>`;
-          });
         }
 
         for (const q of qgsRows) {
@@ -96,8 +166,9 @@
           entry.appendChild(wrap);
           container.appendChild(entry);
 
+          const xml = compressCdata(q.xml);
           const editor = monaco.editor.create(wrap, {
-            value: compressCdata(q.xml),
+            value: xml,
             language: 'xml',
             readOnly: true,
             theme: 'vs',
