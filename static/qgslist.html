@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>QGIS Corpus — QGS files</title>
+  <link href="https://unpkg.com/tabulator-tables@6.2.1/dist/css/tabulator.min.css" rel="stylesheet">
+  <script src="https://unpkg.com/tabulator-tables@6.2.1/dist/js/tabulator.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: sans-serif; margin: 0; padding: 16px; background: #f9f9f9; }
+    h1 { font-size: 1.2rem; margin: 0 0 12px; }
+    #table { background: white; }
+    .tabulator-row { cursor: default !important; }
+    .cell-wrap { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+    .cell-wrap span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cell-btn {
+      flex-shrink: 0;
+      font-size: 0.7rem;
+      color: #bbb;
+      cursor: pointer;
+      user-select: none;
+      padding: 0 2px;
+    }
+    .cell-btn:hover { color: #555; }
+  </style>
+</head>
+<body>
+  <h1>QGIS Corpus — QGS files</h1>
+  <div id="table"></div>
+
+  <script>
+    let table;
+
+    function cellFormatter(cell) {
+      const value = cell.getValue();
+      if (value == null || value === '') return '';
+
+      const wrap = document.createElement('div');
+      wrap.className = 'cell-wrap';
+
+      const left = document.createElement('span');
+      left.style.display = 'flex';
+      left.style.alignItems = 'center';
+      left.style.gap = '2px';
+      left.style.overflow = 'hidden';
+
+      const text = document.createElement('span');
+      text.textContent = value;
+
+      const copyBtn = document.createElement('span');
+      copyBtn.className = 'cell-btn';
+      copyBtn.textContent = '⎘';
+      copyBtn.title = 'Copy';
+      copyBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        navigator.clipboard.writeText(String(value));
+        copyBtn.textContent = '✓';
+        setTimeout(() => copyBtn.textContent = '⎘', 1000);
+      });
+
+      left.appendChild(text);
+      left.appendChild(copyBtn);
+
+      const filterBtn = document.createElement('span');
+      filterBtn.className = 'cell-btn';
+      filterBtn.textContent = '▽';
+      filterBtn.title = 'Filter by this value';
+      filterBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        table.setHeaderFilterValue(cell.getField(), String(value));
+      });
+
+      wrap.appendChild(left);
+      wrap.appendChild(filterBtn);
+      return wrap;
+    }
+
+    table = new Tabulator('#table', {
+      ajaxURL: '/corpus/files.json',
+      ajaxParams: { _shape: 'array', _size: 'max' },
+      ajaxResponse: (_url, _params, response) => response,
+      layout: 'fitColumns',
+      height: '85vh',
+      placeholder: 'No files found',
+      columns: [
+        { title: '',         field: 'id',         width: 60, hozAlign: 'center', headerSort: false,
+          formatter: cell => `<a href="qgs.html?id=${cell.getValue()}">[open]</a>` },
+        { title: 'Branch',   field: 'branch',     headerFilter: true, width: 150, formatter: cellFormatter },
+        { title: 'Filename', field: 'filename',   headerFilter: true, formatter: cellFormatter },
+        { title: 'Ext',      field: 'extension',  headerFilter: true, width: 70,  formatter: cellFormatter },
+        { title: 'Path',     field: 'rel_path',   headerFilter: true, formatter: cellFormatter },
+        { title: 'Size',     field: 'size_bytes', width: 90,
+          formatter: v => v.getValue() != null ? (v.getValue() / 1024).toFixed(1) + ' KB' : '' },
+      ],
+    });
+  </script>
+</body>
+</html>
